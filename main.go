@@ -6,7 +6,9 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
+	"strings"
 	"sync"
 
 	"github.com/fatih/color"
@@ -16,10 +18,39 @@ import (
 // Version is the current version.
 const Version = "0.1.0"
 
+type Header struct {
+	H string
+	V string
+}
+
+type Headers struct {
+	Values []Header
+}
+
+func (h *Headers) String() string {
+	return fmt.Sprintf("Headers String()")
+}
+
+func (h *Headers) Set(s string) error {
+	header := strings.SplitN(s, ":", 2)
+	if len(header) != 2 {
+		return fmt.Errorf("Mallformed header")
+	}
+	h.Values = append(h.Values, Header{strings.TrimSpace(header[0]), strings.TrimSpace(header[1])})
+	return nil
+}
+
+func (h Headers) PopulateHttp(hh http.Header) {
+	for _, v := range h.Values {
+		hh.Add(v.H, v.V)
+	}
+}
+
 var (
 	origin             string
 	url                string
 	protocol           string
+	headers            Headers
 	displayHelp        bool
 	displayVersion     bool
 	insecureSkipVerify bool
@@ -38,6 +69,7 @@ func init() {
 	flag.BoolVar(&insecureSkipVerify, "insecureSkipVerify", false, "Skip TLS certificate verification")
 	flag.BoolVar(&displayHelp, "help", false, "Display help information about wsd")
 	flag.BoolVar(&displayVersion, "version", false, "Display version number")
+	flag.Var(&headers, "H", "Custom headers `Header:Value`")
 }
 
 func inLoop(ws *websocket.Conn, errors chan<- error, in chan<- []byte) {
@@ -84,7 +116,7 @@ func outLoop(ws *websocket.Conn, out <-chan []byte, errors chan<- error) {
 	}
 }
 
-func dial(url, protocol, origin string) (ws *websocket.Conn, err error) {
+func dial(url, protocol, origin string, headers Headers) (ws *websocket.Conn, err error) {
 	config, err := websocket.NewConfig(url, origin)
 	if err != nil {
 		return nil, err
@@ -95,6 +127,9 @@ func dial(url, protocol, origin string) (ws *websocket.Conn, err error) {
 	config.TlsConfig = &tls.Config{
 		InsecureSkipVerify: insecureSkipVerify,
 	}
+
+	headers.PopulateHttp(config.Header)
+
 	return websocket.DialConfig(config)
 }
 
@@ -112,7 +147,7 @@ func main() {
 		os.Exit(0)
 	}
 
-	ws, err := dial(url, protocol, origin)
+	ws, err := dial(url, protocol, origin, headers)
 
 	if protocol != "" {
 		fmt.Printf("connecting to %s via %s from %s...\n", yellow(url), yellow(protocol), yellow(origin))

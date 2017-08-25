@@ -22,6 +22,8 @@ Command-line usage:
 
 ```
 Usage of ./wsd:
+  -H Header:Value
+        Custom headers Header:Value
   -help
       Display help information about wsd
   -insecureSkipVerify
